@@ -1,6 +1,20 @@
 # ChatBot RAG System (Flask + Pinecone + Anthropic Claude)
 
-This repository contains a simple Retrieval-Augmented Generation (RAG) pipeline:
+## What is this project?
+This project is a professional, website-embedded AI chat assistant for your company. You can add it to your website so that when a visitor arrives, the chatbot can greet them, answer first-contact questions, and help them quickly learn about your business, products, and services. It uses Retrieval-Augmented Generation (RAG) to ground answers in your own content, reducing hallucinations and keeping responses on-brand.
+
+Typical uses on a company website:
+- Welcome new visitors and provide a quick overview of the company, offerings, pricing, and policies.
+- Answer FAQ-like questions using your own documentation, blogs, or API-driven content.
+- Guide leads to the right pages, forms, or contact methods, and collect basic intent.
+- Provide 24/7 assistance while escalating complex inquiries to human support.
+
+Key capabilities:
+- Retrieval-Augmented Generation with Pinecone vector search and HuggingFace embeddings.
+- Generative answers via Anthropic Claude (through LangChain), constrained by retrieved context.
+- Simple Flask API you can host and call from any web frontend (example included in frontend/demo.html).
+
+This repository contains a simple RAG pipeline:
 
 - Ingestion (backend/ingest_api.py): fetches content from an API, chunks it, embeds with HuggingFace, and stores vectors in Pinecone.
 - Backend API (backend/app.py): serves a /chat endpoint that retrieves relevant chunks from Pinecone and generates an answer using Anthropic Claude via LangChain.
