@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE/editor
+.vscode/
+.idea/
+*.iml
+*.code-workspace
+
+# Logs
+logs/
+*.log
+
+# Byte-compiled/debug
+*.pyo
+*.pyd
+
+# Test/coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.coverage.*
+.cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Node (in case frontend grows)
+node_modules/
+frontend/node_modules/
+frontend/.parcel-cache/
+frontend/dist/
+
+# Environment and secrets
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Data/cache
+.tmp/
+tmp/
+.cache/
+.cache/**
+
+# HuggingFace / Transformers / Torch caches
+~/.cache/
+~/.cache/huggingface/
+~/.cache/torch/
+
+# Pinecone or vector store local dumps (if any)
+vectorstore/
+indexes/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Misc
+*.sqlite3
+*.db
