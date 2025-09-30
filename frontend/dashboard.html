@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RAG Dashboard</title>
+  <style>
+    :root { --bg:#0b1018; --panel:#121826; --panel-2:#0f1623; --text:#e6edf3; --muted:#a1adbb; --brand:#4f46e5; --brand-2:#6366f1; --border:#223047; --danger:#ef4444; --success:#10b981; }
+    body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background: var(--bg); color: var(--text); }
+    header { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--border); background: var(--panel); position:sticky; top:0; z-index:10; }
+    .brand { display:flex; align-items:center; gap:10px; }
+    .brand-logo { width:28px; height:28px; border-radius:7px; background: conic-gradient(from 220deg, var(--brand), var(--success)); }
+    main { display:grid; grid-template-columns: 1fr 1fr; gap:16px; padding:16px; max-width:1200px; margin:0 auto; }
+    section { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:14px; }
+    h2 { margin:0 0 10px 0; font-size:16px; }
+    label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
+    input, select { width:100%; padding:10px; border-radius:10px; border:1px solid var(--border); background: var(--panel-2); color: var(--text); }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .btn { margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background: linear-gradient(180deg, var(--brand), var(--brand-2)); color:#fff; cursor:pointer; }
+    .btn.secondary { background: var(--panel-2); color: var(--text); }
+    .danger { background: linear-gradient(180deg, var(--danger), #dc2626); border-color: transparent; }
+    .muted { color: var(--muted); font-size:12px; }
+    .list { display:grid; gap:8px; margin-top:8px; }
+    .item { border:1px solid var(--border); padding:10px; border-radius:10px; background: var(--panel-2); display:flex; justify-content:space-between; align-items:center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-logo"></div>
+      <div>
+        <div style="font-weight:600">RAG Dashboard</div>
+        <div class="muted">Manage Pinecone, indexes, and ingestion</div>
+      </div>
+    </div>
+    <div>
+      <a href="demo.html" class="btn secondary">Open Chat</a>
+    </div>
+  </header>
+  <main>
+    <section>
+      <h2>Active RAG Index</h2>
+      <div class="muted">Switch the Pinecone index used by the chat API</div>
+      <label for="indexSelect">Select Index</label>
+      <select id="indexSelect"></select>
+      <button class="btn" id="applyIndex">Apply</button>
+      <div id="indexStatus" class="muted" style="margin-top:8px"></div>
+    </section>
+
+    <section>
+      <h2>Create Pinecone Index</h2>
+      <div class="muted">Dimension must match your embedding model (currently 768)</div>
+      <label>Index Name</label>
+      <input id="newIndexName" placeholder="e.g., rag-index" />
+      <div class="row">
+        <div>
+          <label>Dimension</label>
+          <input id="newIndexDim" type="number" value="768" />
+        </div>
+        <div>
+          <label>Metric</label>
+          <select id="newIndexMetric">
+            <option value="cosine" selected>cosine</option>
+            <option value="dotproduct">dotproduct</option>
+            <option value="euclidean">euclidean</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn" id="createIndex">Create</button>
+      <div id="createStatus" class="muted" style="margin-top:8px"></div>
+    </section>
+
+    <section>
+      <h2>Manage Documents</h2>
+      <div class="muted">Upload .txt files to backend/documents and trigger ingestion</div>
+      <input type="file" id="fileInput" multiple accept=".txt" />
+      <button class="btn" id="uploadBtn">Upload</button>
+      <button class="btn" id="ingestBtn">Run Ingestion</button>
+      <div id="filesList" class="list"></div>
+      <div id="ingestStatus" class="muted" style="margin-top:8px"></div>
+    </section>
+
+    <section>
+      <h2>MCP & RAG Settings</h2>
+      <div class="muted">Placeholder for MCP configuration (extend as needed)</div>
+      <label>Anthropic API Key</label>
+      <input id="anthropicKey" placeholder="******" />
+      <button class="btn" id="saveKeys">Save Keys</button>
+      <div id="keysStatus" class="muted" style="margin-top:8px"></div>
+    </section>
+  </main>
+
+  <script>
+    const API = 'http://localhost:5000';
+
+    async function loadIndexes() {
+      const sel = document.getElementById('indexSelect');
+      sel.innerHTML = '';
+      try {
+        const res = await fetch(API + '/indexes');
+        const data = await res.json();
+        const { indexes = [], active } = data;
+        for (const name of indexes) {
+          const opt = document.createElement('option');
+          opt.value = name; opt.textContent = name; if (name === active) opt.selected = true; sel.appendChild(opt);
+        }
+      } catch (e) {
+        document.getElementById('indexStatus').textContent = 'Failed to load indexes: ' + e.message;
+      }
+    }
+
+    async function applyIndex() {
+      const name = document.getElementById('indexSelect').value;
+      document.getElementById('indexStatus').textContent = 'Switching...';
+      try {
+        const res = await fetch(API + '/set-index', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ index: name }) });
+        const j = await res.json();
+        document.getElementById('indexStatus').textContent = j.message || JSON.stringify(j);
+      } catch (e) {
+        document.getElementById('indexStatus').textContent = 'Failed: ' + e.message;
+      }
+    }
+
+    async function createIndex() {
+      const name = document.getElementById('newIndexName').value.trim();
+      const dim = parseInt(document.getElementById('newIndexDim').value, 10) || 768;
+      const metric = document.getElementById('newIndexMetric').value;
+      if (!name) { document.getElementById('createStatus').textContent = 'Name required'; return; }
+      document.getElementById('createStatus').textContent = 'Creating...';
+      try {
+        const res = await fetch(API + '/create-index', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name, dimension: dim, metric }) });
+        const j = await res.json();
+        document.getElementById('createStatus').textContent = j.message || JSON.stringify(j);
+        await loadIndexes();
+      } catch (e) {
+        document.getElementById('createStatus').textContent = 'Failed: ' + e.message;
+      }
+    }
+
+    async function listFiles() {
+      try {
+        const res = await fetch(API + '/documents');
+        const j = await res.json();
+        const list = document.getElementById('filesList');
+        list.innerHTML = '';
+        (j.files || []).forEach(f => {
+          const div = document.createElement('div'); div.className = 'item';
+          div.innerHTML = '<div>' + f + '</div>';
+          list.appendChild(div);
+        });
+      } catch (e) {
+        document.getElementById('ingestStatus').textContent = 'Failed to list files: ' + e.message;
+      }
+    }
+
+    async function uploadFiles() {
+      const input = document.getElementById('fileInput');
+      const files = input.files;
+      if (!files || files.length === 0) { alert('Select files'); return; }
+      const form = new FormData();
+      for (const f of files) form.append('files', f);
+      try {
+        const res = await fetch(API + '/upload', { method:'POST', body: form });
+        const j = await res.json();
+        document.getElementById('ingestStatus').textContent = j.message || JSON.stringify(j);
+        await listFiles();
+      } catch (e) {
+        document.getElementById('ingestStatus').textContent = 'Upload failed: ' + e.message;
+      }
+    }
+
+    async function runIngestion() {
+      document.getElementById('ingestStatus').textContent = 'Ingesting...';
+      try {
+        const res = await fetch(API + '/ingest', { method:'POST' });
+        const j = await res.json();
+        document.getElementById('ingestStatus').textContent = j.message || JSON.stringify(j);
+      } catch (e) {
+        document.getElementById('ingestStatus').textContent = 'Ingestion failed: ' + e.message;
+      }
+    }
+
+    async function saveKeys() {
+      const key = document.getElementById('anthropicKey').value.trim();
+      try {
+        const res = await fetch(API + '/set-keys', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ANTHROPIC_API_KEY: key }) });
+        const j = await res.json();
+        document.getElementById('keysStatus').textContent = j.message || JSON.stringify(j);
+      } catch (e) {
+        document.getElementById('keysStatus').textContent = 'Failed: ' + e.message;
+      }
+    }
+
+    document.getElementById('applyIndex').onclick = applyIndex;
+    document.getElementById('createIndex').onclick = createIndex;
+    document.getElementById('uploadBtn').onclick = uploadFiles;
+    document.getElementById('ingestBtn').onclick = runIngestion;
+    document.getElementById('saveKeys').onclick = saveKeys;
+
+    // init
+    loadIndexes();
+    listFiles();
+  </script>
+</body>
+</html>

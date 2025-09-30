@@ -8,7 +8,7 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 
 # --- CONFIGURE THE INDEX ---
-INDEX_NAME = "rag-index"  # Make sure this matches your index name on Pinecone
+INDEX_NAME = "pyos-index"
 # ---------------------------
 
 def main():

@@ -112,6 +112,16 @@ Example using curl (PowerShell; escape quotes accordingly):
 
 Open frontend/demo.html in a browser (or serve it via a static server). You can edit it to call http://localhost:5000/chat with fetch and display responses.
 
+## Admin Dashboard
+
+Open frontend/dashboard.html to manage RAG settings:
+- List and switch active Pinecone index used by the chat API.
+- Create a new Pinecone index (dimension must match embeddings; default 768).
+- Upload .txt documents to backend/documents and trigger ingestion.
+- Temporarily update Anthropic API key for current session.
+
+The backend exposes helper endpoints: GET /indexes, POST /set-index, POST /create-index, GET /documents, POST /upload, POST /ingest, POST /set-keys.
+
 ## Common Pitfalls and Notes
 
 - Ensure .env is present in backend/ before running scripts so load_dotenv() can pick up keys.
