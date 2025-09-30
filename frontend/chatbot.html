@@ -52,12 +52,12 @@
         .history { display: grid; gap: 8px; }
         .history-item { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--panel-2); font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 0.2s ease, transform 0.2s ease; }
         .history-item:hover { background: var(--brand); color: #fff; transform: translateY(-1px); }
-        section.chat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-rows: 1fr auto; height: 100%; box-shadow: var(--shadow); }
+        section.chat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-rows: 1fr auto; height: 100%; box-shadow: var(--shadow); overflow: hidden; }
         .messages { padding: 20px; overflow-y: auto; scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--muted) var(--panel); }
         .msg { display: grid; grid-template-columns: 32px 1fr; gap: 12px; margin-bottom: 16px; animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--user-bubble); display: grid; place-items: center; font-size: 14px; font-weight: 500; color: var(--muted); }
-        .bubble { padding: 0.1px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; }
+        .avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--user-bubble); display: grid; place-items: center; font-size: 14px; font-weight: 500; color: var(--muted); flex-shrink: 0; }
+        .bubble { padding: 0.1px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; word-wrap: break-word; overflow-wrap: break-word; }
         .msg.user .avatar { background: linear-gradient(180deg, var(--brand), var(--brand-2)); color: #fff; }
         .meta { font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 8px; }
         .bubble pre { background: var(--code-bg) !important; border-radius: 8px; padding: 12px !important; margin: 12px 0; overflow-x: auto; font-size: 13px; line-height: 1.5; border: 1px solid var(--border); }
@@ -72,7 +72,7 @@
         .input-wrap:focus-within { border-color: var(--brand); }
         textarea { resize: none; border: none; outline: none; background: transparent; color: var(--text); font-size: 14px; font-family: inherit; width: 100%; height: 24px; max-height: 200px; line-height: 24px; padding: 0;}
         textarea::placeholder { color: var(--muted); }
-        .toast { position: fixed; right: 20px; bottom: 20px; background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; box-shadow: var(--shadow); display: none; font-size: 13px; max-width: 300px; animation: slideIn 0.3s ease; }
+        .toast { position: fixed; right: 20px; bottom: 20px; background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; box-shadow: var(--shadow); display: none; font-size: 13px; max-width: 300px; animation: slideIn 0.3s ease; z-index: 20; }
         .toast.show { display: block; }
         @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     </style>
@@ -126,144 +126,308 @@
         const toastEl = document.getElementById('toast');
         const themeToggle = document.getElementById('themeToggle');
 
+        const SESSION_DURATION = 30 * 60 * 1000; // 30 minutes in milliseconds
+
         marked.setOptions({ gfm: true, breaks: true, langPrefix: 'language-' });
         let messages = loadMessages();
         let sending = false;
 
+        // Initialize theme and render
         applyTheme(loadTheme());
         renderAll();
 
+        // Event Listeners
         themeToggle.addEventListener('click', () => {
             const next = (document.documentElement.getAttribute('data-theme') === 'light') ? 'dark' : 'light';
-            saveTheme(next); applyTheme(next);
+            saveTheme(next);
+            applyTheme(next);
         });
+
         clearBtn.addEventListener('click', () => {
             if (sending || messages.length === 0) return;
             if (confirm('Are you sure you want to clear this conversation?')) {
-                messages = []; saveMessages(); renderAll();
+                messages = [];
+                saveMessages();
+                renderAll();
                 showToast('Conversation cleared');
             }
         });
+
         sendBtn.addEventListener('click', () => trySend());
+
         inputEl.addEventListener('input', () => autoResize(inputEl));
+
         inputEl.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); trySend(); }
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                trySend();
+            }
         });
 
+        // Render Functions
         function renderAll() {
-            renderMessages(); renderHistory(); scrollToBottom();
+            renderMessages();
+            renderHistory();
+            requestAnimationFrame(() => scrollToBottom());
         }
+
         function renderMessages() {
             messagesEl.innerHTML = '';
             if (messages.length === 0) {
                 messagesEl.innerHTML = `<div style="text-align:center; color: var(--muted); padding-top: 20%;">Ask a question to get started.</div>`;
             } else {
-                for (const m of messages) { messagesEl.appendChild(renderMessage(m)); }
+                const fragment = document.createDocumentFragment();
+                for (const m of messages) {
+                    fragment.appendChild(renderMessage(m));
+                }
+                messagesEl.appendChild(fragment);
             }
-            Prism.highlightAll();
+            requestAnimationFrame(() => Prism.highlightAllUnder(messagesEl));
         }
+
         function renderHistory() {
             historyEl.innerHTML = '';
             const items = messages.filter(m => m.role === 'user').slice(-10).reverse();
+            const fragment = document.createDocumentFragment();
             for (const it of items) {
                 const div = document.createElement('div');
-                div.className = 'history-item'; div.title = it.text; div.textContent = it.text;
-                div.onclick = () => { inputEl.value = it.text; inputEl.focus(); autoResize(inputEl); };
-                historyEl.appendChild(div);
+                div.className = 'history-item';
+                div.title = it.text;
+                div.textContent = it.text;
+                div.onclick = () => {
+                    inputEl.value = it.text;
+                    inputEl.focus();
+                    autoResize(inputEl);
+                };
+                fragment.appendChild(div);
             }
+            historyEl.appendChild(fragment);
         }
+
         function renderMessage(m) {
             const wrap = document.createElement('div');
             wrap.className = 'msg ' + (m.role === 'user' ? 'user' : 'assistant');
+
             const avatar = document.createElement('div');
             avatar.className = 'avatar';
             avatar.textContent = m.role === 'user' ? 'U' : 'P';
+
             const content = document.createElement('div');
+            content.style.minWidth = '0'; // Fix for text overflow
+
             const meta = document.createElement('div');
             meta.className = 'meta';
             const ts = new Date(m.ts || Date.now());
             meta.textContent = (m.role === 'user' ? 'You' : 'PsyOS Assistant') + ' • ' + ts.toLocaleTimeString();
+
             const bubble = document.createElement('div');
             bubble.className = 'bubble';
+
             if (m.role === 'assistant') {
                 try {
                     const rawHtml = marked.parse(m.text || '');
                     bubble.innerHTML = DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
-                } catch (e) { bubble.textContent = m.text; }
-            } else { bubble.textContent = m.text; }
-            content.appendChild(meta); content.appendChild(bubble);
-            wrap.appendChild(avatar); wrap.appendChild(content);
+                } catch (e) {
+                    bubble.textContent = m.text;
+                }
+            } else {
+                bubble.textContent = m.text;
+            }
+
+            content.appendChild(meta);
+            content.appendChild(bubble);
+            wrap.appendChild(avatar);
+            wrap.appendChild(content);
             return wrap;
         }
+
         function showTyping() {
             const wrap = document.createElement('div');
-            wrap.className = 'msg assistant'; wrap.id = 'typing';
+            wrap.className = 'msg assistant';
+            wrap.id = 'typing';
+
             const avatar = document.createElement('div');
-            avatar.className = 'avatar'; avatar.textContent = 'P';
+            avatar.className = 'avatar';
+            avatar.textContent = 'P';
+
             const content = document.createElement('div');
             const meta = document.createElement('div');
-            meta.className = 'meta'; meta.textContent = 'Assistant is typing...';
+            meta.className = 'meta';
+            meta.textContent = 'Assistant is typing...';
+
             const bubble = document.createElement('div');
             bubble.className = 'bubble';
             const dots = document.createElement('div');
-            dots.className = 'typing'; dots.innerHTML = '<span></span><span></span><span></span>';
-            bubble.appendChild(dots); content.appendChild(meta); content.appendChild(bubble);
-            wrap.appendChild(avatar); wrap.appendChild(content);
-            messagesEl.appendChild(wrap); scrollToBottom();
+            dots.className = 'typing';
+            dots.innerHTML = '<span></span><span></span><span></span>';
+
+            bubble.appendChild(dots);
+            content.appendChild(meta);
+            content.appendChild(bubble);
+            wrap.appendChild(avatar);
+            wrap.appendChild(content);
+            messagesEl.appendChild(wrap);
+            requestAnimationFrame(() => scrollToBottom());
         }
-        function hideTyping() { const t = document.getElementById('typing'); if (t) t.remove(); }
-        function setSending(v) { sending = v; sendBtn.disabled = v; inputEl.disabled = v; }
+
+        function hideTyping() {
+            const t = document.getElementById('typing');
+            if (t) t.remove();
+        }
+
+        function setSending(v) {
+            sending = v;
+            sendBtn.disabled = v;
+            inputEl.disabled = v;
+        }
+
         async function trySend() {
             const text = inputEl.value.trim();
-            if (!text || sending) { return; }
+            if (!text || sending) {
+                return;
+            }
+
             setSending(true);
             const userMsg = { role: 'user', text, ts: Date.now() };
             messages.push(userMsg);
-            if(messages.length === 1) messagesEl.innerHTML = '';
+
+            if (messages.length === 1) messagesEl.innerHTML = '';
+
             messagesEl.appendChild(renderMessage(userMsg));
             renderHistory();
-            inputEl.value = ''; autoResize(inputEl);
+            inputEl.value = '';
+            autoResize(inputEl);
             showTyping();
+
             try {
                 const res = await fetch(`${API_BASE_URL}/chat`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: text })
                 });
+
                 const data = await res.json();
                 hideTyping();
-                if (!res.ok || data.error) { throw new Error(data.error || `HTTP ${res.status}`); }
-                const botMsg = { role: 'assistant', text: (data.response ?? JSON.stringify(data)), ts: Date.now() };
+
+                if (!res.ok || data.error) {
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+
+                const botMsg = {
+                    role: 'assistant',
+                    text: (data.response ?? JSON.stringify(data)),
+                    ts: Date.now()
+                };
                 messages.push(botMsg);
                 saveMessages();
-                messagesEl.appendChild(renderMessage(botMsg));
-                Prism.highlightAllUnder(messagesEl);
+
+                const msgElement = renderMessage(botMsg);
+                messagesEl.appendChild(msgElement);
+
+                // Highlight code in the new message only
+                requestAnimationFrame(() => {
+                    Prism.highlightAllUnder(msgElement);
+                    scrollToBottom();
+                });
+
             } catch (e) {
                 hideTyping();
-                const errMsg = { role: 'assistant', text: `**Error:** ${e.message}`, ts: Date.now() };
+                const errMsg = {
+                    role: 'assistant',
+                    text: `**Error:** ${e.message}`,
+                    ts: Date.now()
+                };
                 messages.push(errMsg);
                 messagesEl.appendChild(renderMessage(errMsg));
                 showToast('Error: ' + e.message);
             } finally {
-                setSending(false); inputEl.focus(); scrollToBottom();
+                setSending(false);
+                inputEl.focus();
+                requestAnimationFrame(() => scrollToBottom());
             }
         }
-        function autoResize(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
-        function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+
+        function autoResize(el) {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+        }
+
+        function scrollToBottom() {
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
         function showToast(msg) {
-            toastEl.textContent = msg; toastEl.classList.add('show');
+            toastEl.textContent = msg;
+            toastEl.classList.add('show');
             setTimeout(() => toastEl.classList.remove('show'), 3000);
         }
-        function saveMessages() { try { sessionStorage.setItem('chat_messages', JSON.stringify(messages)); } catch {} }
-        function loadMessages() { try { const raw = sessionStorage.getItem('chat_messages'); return raw ? JSON.parse(raw) : []; } catch { return []; } }
-        function saveTheme(t) { localStorage.setItem('chat_theme', t); }
-        function loadTheme() { return localStorage.getItem('chat_theme') || 'dark'; }
+
+        // Storage Functions with 30-minute expiry
+        function saveMessages() {
+            try {
+                const data = {
+                    messages: messages,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('chat_session', JSON.stringify(data));
+            } catch (e) {
+                console.error('Failed to save messages:', e);
+            }
+        }
+
+        function loadMessages() {
+            try {
+                const raw = localStorage.getItem('chat_session');
+                if (!raw) return [];
+
+                const data = JSON.parse(raw);
+                const currentTime = Date.now();
+
+                // Check if session is expired (older than 30 minutes)
+                if (currentTime - data.timestamp > SESSION_DURATION) {
+                    localStorage.removeItem('chat_session');
+                    return [];
+                }
+
+                return data.messages || [];
+            } catch (e) {
+                console.error('Failed to load messages:', e);
+                return [];
+            }
+        }
+
+        function saveTheme(t) {
+            localStorage.setItem('chat_theme', t);
+        }
+
+        function loadTheme() {
+            return localStorage.getItem('chat_theme') || 'dark';
+        }
+
         function applyTheme(t) {
             document.documentElement.setAttribute('data-theme', t);
             const isLight = t === 'light';
             document.getElementById('prismLight').disabled = !isLight;
             document.getElementById('prismDark').disabled = isLight;
         }
+
+        // Periodic cleanup - check session expiry every minute
+        setInterval(() => {
+            const raw = localStorage.getItem('chat_session');
+            if (raw) {
+                try {
+                    const data = JSON.parse(raw);
+                    if (Date.now() - data.timestamp > SESSION_DURATION) {
+                        localStorage.removeItem('chat_session');
+                        messages = [];
+                        renderAll();
+                        showToast('Chat session expired (30 minutes)');
+                    }
+                } catch (e) {
+                    console.error('Error checking session expiry:', e);
+                }
+            }
+        }, 60000); // Check every minute
     </script>
 </body>
 </html>
-
