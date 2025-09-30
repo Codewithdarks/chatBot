@@ -1,248 +1,162 @@
-# /backend/app.py
-
 import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from langchain_anthropic import ChatAnthropic
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_pinecone import Pinecone
-from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 
-# Load environment variables
+# Import functions from our new modular files
+from chatbot import initialize_retriever, get_chat_response
+from create_index import create_pinecone_index, list_pinecone_indexes
+from data_ingest import process_and_embed_document
+from create_index import delete_pinecone_index
+
+# ==============================================================================
+# 1. INITIAL SETUP & CONFIGURATION
+# ==============================================================================
 load_dotenv()
-anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
-
-# Basic environment validation
-if not anthropic_api_key:
-    raise ValueError("ANTHROPIC_API_KEY environment variable is not set. Please add it to your .env file.")
-if not PINECONE_API_KEY:
-    print("[WARN] PINECONE_API_KEY is not set. Pinecone operations may fail.", flush=True)
-
-# --- CONFIGURE THE DATABASE ---
-INDEX_NAME = os.getenv("ACTIVE_INDEX", "pyos-index")
-# ------------------------------
-
-# Initialize Flask App and CORS
 app = Flask(__name__)
 CORS(app)
 
-# Simple in-memory active index name; initialized from env
-active_index = INDEX_NAME
+# --- Global Variables ---
+# Default active index name, can be changed via API
+active_index_name = os.getenv("ACTIVE_INDEX", "pyos-index")
 
-
-@app.get('/health')
-def health():
-    return jsonify({"status": "ok", "active_index": active_index})
-
-
-@app.get('/indexes')
-def list_indexes():
-    try:
-        from pinecone import Pinecone as Pc
-        pc = Pc(api_key=PINECONE_API_KEY)
-        names = pc.list_indexes().names()
-        return jsonify({"indexes": names, "active": active_index})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.post('/set-index')
-def set_index():
-    global active_index
-    data = request.get_json(force=True, silent=True) or {}
-    name = data.get('index')
-    if not name:
-        return jsonify({"error": "'index' is required"}), 400
-    active_index = name
-    try:
-        load_retriever()
-        return jsonify({"message": f"Active index set to '{name}'"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-
-@app.post('/create-index')
-def create_index():
-    try:
-        payload = request.get_json(force=True, silent=True) or {}
-        name = payload.get('name')
-        dim = int(payload.get('dimension') or 768)
-        metric = (payload.get('metric') or 'cosine')
-        if not name:
-            return jsonify({"error": "'name' is required"}), 400
-        from pinecone import Pinecone as Pc, ServerlessSpec
-        pc = Pc(api_key=PINECONE_API_KEY)
-        if name in pc.list_indexes().names():
-            return jsonify({"message": f"Index '{name}' already exists"})
-        pc.create_index(name=name, dimension=dim, metric=metric,
-                        spec=ServerlessSpec(cloud='aws', region=os.getenv('PINECONE_ENVIRONMENT') or 'us-east-1'))
-        return jsonify({"message": f"Index '{name}' created"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-
-@app.get('/documents')
-def list_documents():
-    docs_dir = os.path.join(os.path.dirname(__file__), 'documents')
-    try:
-        files = [f for f in os.listdir(docs_dir) if f.lower().endswith('.txt')]
-        return jsonify({"files": files})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.post('/upload')
-def upload_documents():
-    docs_dir = os.path.join(os.path.dirname(__file__), 'documents')
-    os.makedirs(docs_dir, exist=True)
-    files = request.files.getlist('files')
-    if not files:
-        return jsonify({"error": "No files provided"}), 400
-    saved = []
-    for file in files:
-        fname = file.filename
-        if not fname.lower().endswith('.txt'):
-            continue
-        path = os.path.join(docs_dir, os.path.basename(fname))
-        file.save(path)
-        saved.append(os.path.basename(fname))
-    return jsonify({"message": f"Uploaded {len(saved)} files", "saved": saved})
-
-
-@app.post('/ingest')
-def trigger_ingest():
-    try:
-        # Run the ingest_api.main within same process to keep deps simple
-        os.environ["ACTIVE_INDEX"] = active_index
-        from ingest_api import main as ingest_main
-        ingest_main()
-        return jsonify({"message": "Ingestion completed"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.post('/set-keys')
-def set_keys():
-    payload = request.get_json(force=True, silent=True) or {}
-    # For security, we won't persist to disk; just allow setting for current process
-    new_anthropic = payload.get('ANTHROPIC_API_KEY')
-    global llm
-    try:
-        if new_anthropic:
-            os.environ['ANTHROPIC_API_KEY'] = new_anthropic
-            # Recreate LLM with new key
-            from langchain_anthropic import ChatAnthropic
-            llm = ChatAnthropic(model="claude-3-5-sonnet-latest", api_key=new_anthropic)
-        return jsonify({"message": "Keys updated for current session"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-
-# Initialize LLM and Embeddings
-llm = ChatAnthropic(model="claude-3-5-sonnet-latest", api_key=anthropic_api_key)
-# This model produces 768-dimensional vectors
-model_name = "sentence-transformers/all-mpnet-base-v2"
-embeddings = HuggingFaceEmbeddings(model_name=model_name)
-
-# Function to (re)load Pinecone retriever for current active index
+# Global retriever object, initialized on startup
 retriever = None
 
 
-def load_retriever():
-    global retriever
-    print(f"Loading vector store from Pinecone index '{active_index}'...")
-    try:
-        vs = Pinecone.from_existing_index(index_name=active_index, embedding=embeddings)
-        retriever = vs.as_retriever()
-        print("Vector store loaded successfully.")
-    except Exception as e:
-        print(f"[ERROR] Failed to load Pinecone index '{active_index}': {e}")
-        raise
-
-
-load_retriever()
-
-# --- MODIFIED PROMPT TEMPLATE ---
-prompt_template = """
-# ROLE: PsyOS Team Lead Persona
-
-You are the **PsyOS Team Lead**, a world-class Senior Technical Architect and Project Manager. Your sole mission is to guide the development and implementation of the PsyOS platform. Your entire knowledge base comes from the **`PsyOS Project Bible`** (the document provided as context). You must ground every response, analysis, and piece of code in the specifications found within that document. You are a leader, not just a search index. Your goal is to transform retrieved information into actionable strategy, improved architecture, and production-ready code.
-
----
-### CORE DIRECTIVES
-
-1.  **Analyze, Don't Just Recite**: When a user asks a question, never simply quote the document. First, summarize the relevant information, then provide a **"Team Lead's Analysis"**. This analysis should include insights, potential challenges, strategic advice, or areas for improvement.
-2.  **Architect and Improve**: You are an expert architect. When asked about any system or module, you must be able to critique the existing design and propose a **"Revised Architecture"**. Justify your proposed changes based on principles like scalability, security, maintainability, and efficiency.
-3.  **Code with Excellence**: You are a polyglot programmer, fluent in **Python, JavaScript, and Go**. When asked to generate code, you must produce clean, well-commented, and robust code that directly implements the specifications from the document.
-4.  **Adopt a Leadership Tone**: Your communication style is authoritative, clear, and collaborative. Use phrases like "Let's review...", "Our goal here is...", "I recommend we approach this by...", and "Good question, this ties into...". You are guiding a team to success.
-
----
-### QUERY ANALYSIS & RESPONSE STRATEGY
-
-Before answering, first determine the nature of the user's request:
-
-1.  **Project-Specific Question**: Is the user asking about a concept, architecture, workflow, or term that is proprietary to or specifically defined by the `PsyOS Project Bible`? (e.g., "What is a Patient Kernel?", "Tell me about the MCP Server", "What is PsyOS?").
-    * **Response Strategy**: For these questions, your answer **MUST BE BASED STRICTLY AND EXCLUSIVELY** on the provided **CONTEXT**. Synthesize information from the context to form a comprehensive answer. Do not introduce external knowledge. If the context is insufficient, state that the project bible does not provide enough detail on that specific topic.
-
-2.  **General Knowledge Question**: Is the user asking for a definition of a general industry term or technology that is mentioned in the `PsyOS Project Bible` but not defined by it? (e.g., "What is HIPAA?", "What is a vector database?", "What is a healthcare system?").
-    * **Response Strategy**: For these questions, provide a clear, general definition using your own expert knowledge. Then, **use the provided CONTEXT to explain the term's relevance *to the PsyOS project***. For example, after defining HIPAA, you should explain how PsyOS adheres to it based on the document's compliance section.
-
----
-### TASK EXECUTION
-
-Now, analyze the user's request, apply the correct response strategy, and use the provided context to formulate your answer.
-
-**CONTEXT:**
-{context}
-
-**USER REQUEST:**
-{question}
-
-**YOUR RESPONSE AS TEAM LEAD:**
-"""
-
-prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-
+# ==============================================================================
+# 2. CORE API ENDPOINTS
+# ==============================================================================
 
 @app.route('/chat', methods=['POST'])
-def chat():
+def chat_endpoint():
+    """Main endpoint for interacting with the chatbot."""
+    if not retriever:
+        return jsonify({"error": "Chatbot is not ready. Please set a valid active index via /switch-db."}), 503
+
     try:
         data = request.json
-        if not data or 'query' not in data:
-            return jsonify({"error": "Invalid request. 'query' is required."}), 400
-
-        user_query = data['query'].strip()
-
-        # Validate query input
+        user_query = data.get('query', '').strip()
         if not user_query:
             return jsonify({"error": "Query cannot be empty."}), 400
 
-        if len(user_query) > 1000:
-            return jsonify({"error": "Query is too long. Maximum 1000 characters allowed."}), 400
-
-        retrieved_docs = retriever.get_relevant_documents(user_query)
-        context = "\n\n".join([doc.page_content for doc in retrieved_docs])
-
-        if not context:
-            # If no context is found, we can still attempt a general knowledge answer.
-            # We'll create a minimal context that lets the LLM know nothing was found.
-            context = "No specific information was found in the PsyOS Project Bible regarding this topic."
-
-        formatted_prompt = prompt.format(context=context, question=user_query)
-
-        # Call the LLM safely; different versions may return string or a message object
-        llm_response = llm.invoke(formatted_prompt) if hasattr(llm, "invoke") else llm(formatted_prompt)
-        response_text = getattr(llm_response, "content", None) or (
-            llm_response if isinstance(llm_response, str) else str(llm_response))
-
-        return jsonify({"response": response_text})
-    except Exception as error:
-        print(f"An error occurred: {error}")
+        response_text = get_chat_response(user_query, retriever)
+        return jsonify({"response": response_text, "index_used": active_index_name})
+    except Exception as e:
+        print(f"An error occurred during chat: {e}")
         return jsonify({"error": "An internal server error occurred."}), 500
 
 
+@app.route('/create-db', methods=['POST'])
+def create_db_endpoint():
+    """Endpoint to create a new Pinecone index."""
+    try:
+        payload = request.get_json()
+        index_name = payload.get('name')
+        if not index_name:
+            return jsonify({"error": "'name' is required"}), 400
+
+        message = create_pinecone_index(index_name)
+        status_code = 201 if "created successfully" in message else 200
+        return jsonify({"message": message}), status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/list-dbs', methods=['GET'])
+def list_dbs_endpoint():
+    """Endpoint to list all available Pinecone indexes."""
+    try:
+        indexes = list_pinecone_indexes()
+        return jsonify({"indexes": indexes, "active_index": active_index_name})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/switch-db', methods=['POST'])
+def switch_db_endpoint():
+    """Endpoint to switch the active index for the chatbot."""
+    global retriever, active_index_name
+    payload = request.get_json()
+    index_name = payload.get('name')
+    if not index_name:
+        return jsonify({"error": "'name' is required"}), 400
+
+    new_retriever = initialize_retriever(index_name)
+    if new_retriever:
+        retriever = new_retriever
+        active_index_name = index_name
+        return jsonify({"message": f"Active database switched to '{index_name}'."})
+    else:
+        return jsonify({"error": f"Could not connect to index '{index_name}'. Please ensure it exists."}), 404
+
+
+@app.route('/delete-db', methods=['POST'])
+def delete_db_endpoint():
+    """Endpoint to delete a Pinecone index."""
+    global retriever, active_index_name
+    try:
+        payload = request.get_json()
+        index_name = payload.get('name')
+        if not index_name:
+            return jsonify({"error": "'name' is required"}), 400
+
+        # Safety check: if deleting the active index, disconnect the retriever
+        if index_name == active_index_name:
+            retriever = None
+            active_index_name = None
+            print(f"Warning: Active index '{index_name}' is being deleted. Chatbot is now offline.")
+
+        message, status_code = delete_pinecone_index(index_name)
+
+        if status_code == 200 and not active_index_name:
+            message += " Chatbot is now offline. Please switch to an existing database."
+
+        return jsonify({"message": message}), status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/upload-data', methods=['POST'])
+def upload_data_endpoint():
+    """Endpoint to upload a document to a specified Pinecone index."""
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+
+    file = request.files['file']
+    # You can specify which index to upload to, otherwise it uses the active one
+    index_name = request.form.get('index_name', active_index_name)
+
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    if not (file.filename.endswith('.txt') or file.filename.endswith('.md')):
+        return jsonify({"error": "Invalid file type. Only .txt and .md are allowed."}), 400
+
+    upload_folder = os.path.join(os.path.dirname(__file__), 'temp_uploads')
+    os.makedirs(upload_folder, exist_ok=True)
+    temp_path = os.path.join(upload_folder, file.filename)
+
+    try:
+        file.save(temp_path)
+        message, status_code = process_and_embed_document(temp_path, index_name)
+        return jsonify({"message": message}), status_code
+    except Exception as e:
+        return jsonify({"error": f"Failed to process file: {str(e)}"}), 500
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+# ==============================================================================
+# 3. APPLICATION STARTUP
+# ==============================================================================
 if __name__ == '__main__':
+    print("--- Starting Modular Backend Server ---")
+    retriever = initialize_retriever(active_index_name)
+    if not retriever:
+        print(f"\nWARNING: Could not connect to default index '{active_index_name}'.")
+        print("The /chat endpoint will not work until a valid index is set via /switch-db.")
+
     app.run(host='0.0.0.0', port=5000)
+
