@@ -2,6 +2,7 @@ import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
+from datetime import datetime
 
 # Import functions from our new modular files
 from chatbot import initialize_retriever, get_chat_response
@@ -22,6 +23,9 @@ active_index_name = os.getenv("ACTIVE_INDEX", "pyos-index")
 
 # Global retriever object, initialized on startup
 retriever = None
+
+# Global upload history storage (in-memory; persists until app restart)
+upload_history = {}  # {index_name: list of {'file_name': str, 'timestamp': str}}
 
 
 # ==============================================================================
@@ -94,7 +98,7 @@ def switch_db_endpoint():
 @app.route('/delete-db', methods=['POST'])
 def delete_db_endpoint():
     """Endpoint to delete a Pinecone index."""
-    global retriever, active_index_name
+    global retriever, active_index_name, upload_history
     try:
         payload = request.get_json()
         index_name = payload.get('name')
@@ -106,6 +110,10 @@ def delete_db_endpoint():
             retriever = None
             active_index_name = None
             print(f"Warning: Active index '{index_name}' is being deleted. Chatbot is now offline.")
+
+        # Clear history for this index
+        if index_name in upload_history:
+            del upload_history[index_name]
 
         message, status_code = delete_pinecone_index(index_name)
 
@@ -140,12 +148,58 @@ def upload_data_endpoint():
     try:
         file.save(temp_path)
         message, status_code = process_and_embed_document(temp_path, index_name)
+
+        # On success, log to history (keep last 10 for safety, frontend shows 5)
+        if status_code == 200:
+            if index_name not in upload_history:
+                upload_history[index_name] = []
+            upload_history[index_name].append({
+                'file_name': file.filename,
+                'timestamp': datetime.now().isoformat()
+            })
+            # Trim to last 10
+            if len(upload_history[index_name]) > 10:
+                upload_history[index_name] = upload_history[index_name][-10:]
+
         return jsonify({"message": message}), status_code
     except Exception as e:
         return jsonify({"error": f"Failed to process file: {str(e)}"}), 500
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+@app.route('/get-upload-history', methods=['POST'])
+def get_upload_history_endpoint():
+    """Endpoint to retrieve upload history for a specific index."""
+    try:
+        payload = request.get_json()
+        index_name = payload.get('index_name')
+        if not index_name:
+            return jsonify({"error": "'index_name' is required"}), 400
+
+        history = upload_history.get(index_name, [])
+        return jsonify({"history": history})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/clear-upload-history', methods=['POST'])
+def clear_upload_history_endpoint():
+    """Endpoint to clear upload history for a specific index."""
+    try:
+        payload = request.get_json()
+        index_name = payload.get('index_name')
+        if not index_name:
+            return jsonify({"error": "'index_name' is required"}), 400
+
+        if index_name in upload_history:
+            del upload_history[index_name]
+            return jsonify({"message": f"Upload history cleared for '{index_name}'."})
+        else:
+            return jsonify({"message": f"No history found for '{index_name}'."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ==============================================================================
@@ -159,4 +213,3 @@ if __name__ == '__main__':
         print("The /chat endpoint will not work until a valid index is set via /switch-db.")
 
     app.run(host='0.0.0.0', port=5000)
-

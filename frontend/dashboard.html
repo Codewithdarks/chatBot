@@ -107,6 +107,20 @@
             transform: translateY(-1px);
             background: var(--border);
         }
+        .history-item {
+            display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; transition: background-color 0.2s ease; margin-bottom: 8px; font-family: monospace; font-size: 13px;
+        }
+        .history-item:hover { background-color: #1f2a44; }
+        [data-theme="light"] .history-item:hover { background-color: #e2e8f0; }
+        .history-item .file-name { flex: 1; }
+        .history-item .timestamp { color: var(--muted); font-size: 12px; margin-left: 8px; }
+        .history-controls {
+            display: flex; justify-content: space-between; margin-top: 16px; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border);
+        }
+        @media (max-width: 600px) {
+            .history-controls { flex-direction: column; }
+            .history-controls .btn { width: 100%; justify-content: center; }
+        }
     </style>
 </head>
 <body>
@@ -153,26 +167,43 @@
         </div>
 
         <!-- Second Row: Upload & Ingest Document -->
-        <div class="card">
-            <h2 class="card-title">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                <span>Upload & Ingest Document</span>
-            </h2>
-            <form id="upload-form" class="space-y-4">
-                <select id="upload-target-db" required>
-                    <option value="">Select target database</option>
-                </select>
-                <input id="file-input" type="file" required accept=".txt,.md">
-                <button type="submit" id="upload-btn" class="btn primary w-full justify-center">Upload & Ingest</button>
-            </form>
+        <div class="grid-row">
+            <div class="card">
+                <h2 class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span>Upload & Ingest Document</span>
+                </h2>
+                <form id="upload-form" class="space-y-4">
+                    <select id="upload-target-db" required>
+                        <option value="">Select target database</option>
+                    </select>
+                    <input id="file-input" type="file" required accept=".txt,.md">
+                    <button type="submit" id="upload-btn" class="btn primary w-full justify-center">Upload & Ingest</button>
+                </form>
 
-            <!-- Upload Progress Logs -->
-            <div id="upload-logs-container" style="display: none; margin-top: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0;">Upload Progress</h3>
-                    <button id="clear-logs-btn" class="btn" style="padding: 4px 8px; font-size: 12px;">Clear</button>
+                <!-- Upload Progress Logs -->
+                <div id="upload-logs-container" style="display: none; margin-top: 20px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                        <h3 style="font-size: 14px; font-weight: 600; margin: 0;">Upload Progress</h3>
+                        <button id="clear-logs-btn" class="btn" style="padding: 4px 8px; font-size: 12px;">Clear</button>
+                    </div>
+                    <div id="upload-logs" style="background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 300px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; line-height: 1.6;"></div>
                 </div>
-                <div id="upload-logs" style="background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 300px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; line-height: 1.6;"></div>
+            </div>
+
+            <!-- Upload History -->
+            <div class="card">
+                <h2 class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.82 13.72c.18.25.19.68.01.93l-1.66 2.26a.25.25 0 0 0-.12.22V20a.25.25 0 0 1-.25.25H13a.25.25 0 0 1-.25-.25v-2.34a.25.25 0 0 0-.12-.22L9.99 13.72c-.18-.25-.19-.68-.01-.93l4.69-6.71a.25.25 0 0 1 .38 0l4.71 6.71Z"></path><path d="M12 28a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z"></path></svg>
+                    <span id="history-title">Upload History (Last 5)</span>
+                </h2>
+                <div id="history-list" class="max-h-450 overflow-y-auto pr-2">
+                    <p id="history-placeholder" class="text-center text-sm py-8" style="color: var(--muted);">Select an active database to view history.</p>
+                </div>
+                <div class="history-controls">
+                    <button id="refresh-history-btn" class="btn" style="font-size: 12px; padding: 6px 12px;">Refresh History</button>
+                    <button id="clear-history-btn" class="btn danger" style="font-size: 12px; padding: 6px 12px;" title="Clear all upload history for active DB">Clear All</button>
+                </div>
             </div>
         </div>
     </main>
@@ -197,6 +228,11 @@
         const uploadLogsContainer = document.getElementById('upload-logs-container');
         const uploadLogs = document.getElementById('upload-logs');
         const clearLogsBtn = document.getElementById('clear-logs-btn');
+        const historyListEl = document.getElementById('history-list');
+        const historyPlaceholderEl = document.getElementById('history-placeholder');
+        const historyTitleEl = document.getElementById('history-title');
+        const refreshHistoryBtn = document.getElementById('refresh-history-btn');
+        const clearHistoryBtn = document.getElementById('clear-history-btn');
 
         function showToast(msg) {
             toastEl.textContent = msg;
@@ -264,6 +300,38 @@
             }
         }
 
+        async function fetchHistory(indexName = null) {
+            if (!indexName) {
+                historyPlaceholderEl.textContent = 'Select an active database to view history.';
+                historyListEl.innerHTML = '';
+                historyListEl.appendChild(historyPlaceholderEl);
+                historyTitleEl.textContent = 'Upload History (Last 5)';
+                return;
+            }
+
+            // Update title to include DB name
+            historyTitleEl.textContent = `Upload History for ${indexName} (Last 5)`;
+
+            setButtonLoading(refreshHistoryBtn, true);
+            historyPlaceholderEl.textContent = 'Fetching history...';
+            try {
+                const response = await fetch(`${API_BASE_URL}/get-upload-history`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index_name: indexName })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to fetch history');
+                updateHistoryList(data.history || [], indexName);
+            } catch (error) {
+                showToast(`Error: ${error.message}`);
+                historyPlaceholderEl.textContent = `Error fetching history for ${indexName}.`;
+                updateHistoryList([], indexName);
+            } finally {
+                setButtonLoading(refreshHistoryBtn, false);
+            }
+        }
+
         function updateDbList(databases = [], activeIndex = null) {
             dbListEl.innerHTML = '';
             uploadTargetDbSelect.innerHTML = '<option value="">Select target database</option>';
@@ -273,6 +341,7 @@
                 dbListEl.appendChild(placeholderEl);
                 placeholderEl.textContent = 'No databases found. Create one to get started.';
                 uploadTargetDbSelect.disabled = true;
+                fetchHistory(null);
             } else {
                 uploadTargetDbSelect.disabled = false;
                 databases.forEach(db => {
@@ -294,7 +363,35 @@
                     if (isActive) option.selected = true;
                     uploadTargetDbSelect.appendChild(option);
                 });
+                fetchHistory(activeIndex);
             }
+        }
+
+        function updateHistoryList(history = [], indexName) {
+            historyListEl.innerHTML = '';
+            if (history.length === 0) {
+                const p = document.createElement('p');
+                p.className = 'text-center text-sm py-8';
+                p.style.color = 'var(--muted)';
+                p.textContent = `No upload history found for ${indexName}.`;
+                historyListEl.appendChild(p);
+                return;
+            }
+
+            // Limit to last 5
+            const recentHistory = history.slice(-5).reverse();
+
+            recentHistory.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                div.innerHTML = `
+                    <div class="flex items-center">
+                        <span class="file-name">${item.file_name}</span>
+                        <span class="timestamp">${new Date(item.timestamp).toLocaleString()}</span>
+                    </div>
+                `;
+                historyListEl.appendChild(div);
+            });
         }
 
         async function handleDbAction(e, url) {
@@ -321,12 +418,41 @@
             }
         }
 
+        async function handleClearHistory() {
+            const activeDb = activeDbTextEl.textContent;
+            if (!activeDb || activeDb === 'None') {
+                showToast('No active database selected.');
+                return;
+            }
+            if (!confirm(`Clear all upload history for "${activeDb}"?`)) return;
+
+            setButtonLoading(clearHistoryBtn, true);
+            try {
+                const response = await fetch(`${API_BASE_URL}/clear-upload-history`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index_name: activeDb })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to clear history');
+                showToast(data.message);
+                await fetchHistory(activeDb);
+            } catch (error) {
+                showToast(`Error: ${error.message}`);
+            } finally {
+                setButtonLoading(clearHistoryBtn, false);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             applyTheme(loadTheme());
             fetchDatabases();
         });
 
         refreshBtn.addEventListener('click', fetchDatabases);
+        refreshHistoryBtn.addEventListener('click', () => fetchHistory(activeDbTextEl.textContent));
+
+        clearHistoryBtn.addEventListener('click', handleClearHistory);
 
         createDbForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -402,6 +528,11 @@
                 addLog(`✓ Upload completed successfully!`, 'success');
                 showToast(data.message);
                 fileInput.value = '';
+
+                // Refresh history if target DB is active
+                if (targetDb === activeDbTextEl.textContent) {
+                    fetchHistory(targetDb);
+                }
             } catch (error) {
                 addLog(`Upload failed: ${error.message}`, 'error');
                 showToast(`Error: ${error.message}`);
@@ -411,7 +542,15 @@
         });
 
         dbListEl.addEventListener('click', (e) => {
-            if (e.target.closest('.switch-btn')) handleDbAction(e, '/switch-db');
+            if (e.target.closest('.switch-btn')) {
+                handleDbAction(e, '/switch-db').then(() => {
+                    // Refetch history after switch
+                    const activeDb = activeDbTextEl.textContent;
+                    if (activeDb && activeDb !== 'None') {
+                        fetchHistory(activeDb);
+                    }
+                });
+            }
             if (e.target.closest('.delete-btn')) handleDbAction(e, '/delete-db');
         });
 
